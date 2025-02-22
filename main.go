@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -30,11 +32,14 @@ func initialModel() model {
 	items := []list.Item{
 		item{title: "git status", description: "show working tree status"},
 		item{title: "git add .", description: "add all changes to staging"},
-		item{title: "git commit", description: "commit staged changes"},
+		item{title: "git commit -m", description: "commit staged changes"},
 		item{title: "git push", description: "push commits to remote"},
 		item{title: "git pull", description: "pull changes from remote"},
 		item{title: "git branch", description: "list branches"},
-		item{title: "git checkout", description: "switch branches"},
+		item{title: "git checkout -b", description: "create and switch to new branch"},
+		item{title: "git checkout main", description: "switch to main branch"},
+		item{title: "git log", description: "show commit logs"},
+		item{title: "git fetch", description: "download objects and refs from remote"},
 	}
 
 	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
@@ -51,7 +56,19 @@ func (m model) Init() tea.Cmd {
 }
 
 func executeGitCommand(command string) error {
-	cmd := exec.Command("git", command)
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return fmt.Errorf("empty command")
+	}
+
+	if parts[1] == "commit" && parts[2] == "-m" {
+		cmd := exec.Command("git", "commit", "-m", strings.Join(parts[3:], " "))
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+
+	cmd := exec.Command("git", parts[1:]...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -93,7 +110,6 @@ func (m model) View() string {
 }
 
 func main() {
-	// fmt.Println("april")
 	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
 	m, err := p.Run()
 	if err != nil {
@@ -103,7 +119,32 @@ func main() {
 
 	if model, ok := m.(model); ok && model.choice != "" {
 		fmt.Printf("april: %s\n", model.choice)
-		executeGitCommand(model.choice)
+		if strings.Contains(model.choice, "commit -m") {
+			fmt.Print("Enter commit message: ")
+			reader := bufio.NewReader(os.Stdin)
+			message, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Printf("Error reading commit message: %v\n", err)
+				return
+			}
+			message = strings.TrimSpace(message)
+			err = executeGitCommand(fmt.Sprintf("git commit -m %s", message))
+		} else if strings.Contains(model.choice, "checkout -b") {
+			fmt.Print("Enter branch name: ")
+			reader := bufio.NewReader(os.Stdin)
+			branchName, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Printf("Error reading branch name: %v\n", err)
+				return
+			}
+			branchName = strings.TrimSpace(branchName)
+			err = executeGitCommand(fmt.Sprintf("git checkout -b %s", branchName))
+		} else {
+			err = executeGitCommand(model.choice)
+		}
+
+		if err != nil {
+			fmt.Printf("Error executing command: %v\n", err)
+		}
 	}
 }
-
